@@ -64,7 +64,7 @@ config_bash(){
 	if [ -f "$HOME/.bashrc" ]; then
 		grep "$MARKER" $HOME/.bashrc > /dev/null
 		if [ $? -ne 0 ]; then
-			print_info -e "Adding CURRENT_PATH env"
+			print_info "Adding CURRENT_PATH env"
 			echo >> "$HOME/.bashrc"
 			echo "CURRENT_PATH=$CURRENT_PATH # (: MARKER :)" >> "$HOME/.bashrc"
 
@@ -83,7 +83,7 @@ config_bash(){
 	if [ -f "$HOME/.bash_profile" ]; then
 		grep "$MARKER" $HOME/.bash_profile > /dev/null
 		if [ $? -ne 0 ]; then
-			print_info -e "Adding CURRENT_PATH env"
+			print_info "Adding CURRENT_PATH env"
 			echo >> "$HOME/.bash_profile"
 			echo "CURRENT_PATH=$CURRENT_PATH # (: MARKER :)" >> "$HOME/.bash_profile"
 
@@ -134,7 +134,7 @@ config_tmux(){
 	print_info "Processing tmux ..."
 	link_path "$CURRENT_PATH/.config/tmux/tmux.conf" "$HOME/.tmux.conf"
 
-	if command -v tmux > /dev/null 2>&1 && [ -n "${TMUX:-}" ]; then
+	if command -v tmux > /dev/null 2>&1 && [ -n "${TMUX:-}" ] && tmux display-message -p '#S' > /dev/null 2>&1; then
 		tmux source-file "$HOME/.tmux.conf"
 	fi
 }
