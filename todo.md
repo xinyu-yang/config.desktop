@@ -42,6 +42,6 @@
 [x] 13. Verify the adapted repo locally.
     Run shell syntax checks, review diffs, and confirm the new bootstrap behavior is consistent before committing.
 
-[ ] 14. Commit the desktop-specific changes in the new repo with a clear message.
+[x] 14. Commit the desktop-specific changes in the new repo with a clear message.
 
 [ ] 15. Push the finished result to `git@github.com:xinyu-yang/config.desktop.git`.
