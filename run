@@ -2,12 +2,12 @@
 
 # To mark config files that have been updated
 MARKER="(: MARKER :)"
-CURRENT_PATH=$(realpath .)
+CURRENT_PATH=$(cd -- "$(dirname -- "$0")" && pwd)
 
 # log functions
-print_info() { echo -e [INFO] $1; }
-print_warn() { echo -e [WARNING] $1; }
-print_error() { echo -e [ERROR] $1; }
+print_info() { echo -e "[INFO] $1"; }
+print_warn() { echo -e "[WARNING] $1"; }
+print_error() { echo -e "[ERROR] $1"; }
 
 
 ###################################
@@ -15,7 +15,7 @@ print_error() { echo -e [ERROR] $1; }
 ###################################
 # Import bashrc string
 import_bashrc='
-# Import .bashrc from config.sh
+# Import .bashrc from config.desktop
 if [ -f "$CURRENT_PATH/.bashrc" ]; then
 	. "$CURRENT_PATH/.bashrc"
 fi'
@@ -23,10 +23,37 @@ fi'
 
 # Import bash_profile string
 import_bash_profile='
-# Import .bash_profile from config.sh (: MARKER :)
+# Import .bash_profile from config.desktop (: MARKER :)
 if [ -f "$CURRENT_PATH/.bash_profile" ]; then
 	. "$CURRENT_PATH/.bash_profile"
 fi'
+
+ensure_dir() {
+	if [ ! -d "$1" ]; then
+		mkdir -p "$1"
+	fi
+}
+
+link_path() {
+	local source_path="$1"
+	local target_path="$2"
+
+	if [ -L "$target_path" ]; then
+		if [ "$(readlink -f "$target_path")" = "$(readlink -f "$source_path")" ]; then
+			print_warn "$target_path already links to $source_path"
+			return 0
+		fi
+		print_warn "Skipping $target_path because it links somewhere else"
+		return 0
+	fi
+
+	if [ -e "$target_path" ]; then
+		print_warn "Skipping $target_path because a file already exists there"
+		return 0
+	fi
+
+	ln -s "$source_path" "$target_path"
+}
 
 
 config_bash(){
@@ -46,8 +73,8 @@ config_bash(){
 			echo "$import_bashrc" >> "$HOME/.bashrc"
 		fi
 	else
-		print_info "Linking config.sh/.bashrc ..."
-		ln -s $CURRENT_PATH/.bashrc $HOME/.bashrc
+		print_info "Linking $CURRENT_PATH/.bashrc ..."
+		link_path "$CURRENT_PATH/.bashrc" "$HOME/.bashrc"
 	fi
 
 
@@ -65,79 +92,28 @@ config_bash(){
 		fi
 	else
 		print_info "Linking $CURRENT_PATH/.bash_profile ..."
-		ln -s $CURRENT_PATH/.bash_profile $HOME/.bash_profile
+		link_path "$CURRENT_PATH/.bash_profile" "$HOME/.bash_profile"
 	fi
 
 
-	# Update or link fish config
-	if [ -d "$HOME/.config/bash" ]; then
-		if ! [ -f "$HOME/.config/bash/copilot.bash" ]; then
-			print_info "Linking .config/bash/copilot.bash ..."
-			ln -s $CURRENT_PATH/.config/bash/copilot.bash $HOME/.config/bash/copilot.bash
-		fi
-	else
-		print_info "Linking .config/bash ..."
-		ln -s $CURRENT_PATH/.config/bash $HOME/.config/bash
-	fi
-}
-
-
-
-###################################
-# fish
-###################################
-config_fish(){
-	# Update or link fish config
-	if [ -d "$HOME/.config/fish/" ]; then
-		grep "$MARKER" $HOME/.config/fish/config.fish > /dev/null
-		if [ $? -ne 0 ]; then
-			print_info "Replacing old config ..."
-			print_info "Backup old config to $HOME/.config/fish.old/"
-			mv $HOME/.config/fish $HOME/.config/fish.old
-		else
-			print_warn "Linked config file exists!"
-			return 0
-		fi
-	fi
-	print_info "Linking config.sh/.config/fish ..."
-	ln -s $CURRENT_PATH/.config/fish $HOME/.config/fish
+	ensure_dir "$HOME/.config/bash"
+	print_info "Linking bash helper ..."
+	link_path "$CURRENT_PATH/.config/bash/copilot.bash" "$HOME/.config/bash/copilot.bash"
 }
 
 
 ###################################
 # lf (https://github.com/gokcehan/lf)
 ###################################
-# Install lf
-inst_lf_root(){
-	print_info "Installing lf..."
-	url=$(curl -Ls -w %{url_effective} -o /dev/null https://github.com/gokcehan/lf/releases/latest)
-	wget ${url/tag/download}/lf-linux-amd64.tar.gz -O /tmp/lf.tar.gz -nv > /dev/null
-	if $(file /tmp/lf.tar.gz | grep gzip > /dev/null);
-	then
-		mkdir /tmp/lfexport
-		tar zxf /tmp/lf.tar.gz -C /tmp/lfexport
-		if [ $IS_SUDOER -eq 1 ];
-		then
-			sudo mv /tmp/lfexport/lf /usr/local/bin/
-		else
-			mv /tmp/lfexport/lf ~/.local/bin/
-		fi
-		print_info "lf installed."
-	fi
-	rm /tmp/lf.tar.gz
-	rm -rf /tmp/lfexport
-}
-
-inst_lf_noroot(){
-	inst_lf_root
+inst_lf_root() {
+	print_info "Installing lf from Debian packages ..."
+	sudo apt install -y lf
 }
 
 # Link lf config
 config_lf(){
 	print_info "Processing lf ..."
-	if [ ! -d "$HOME/.config/lf" ]; then
-		ln -s $CURRENT_PATH/.config/lf $HOME/.config/lf
-	fi
+	link_path "$CURRENT_PATH/.config/lf" "$HOME/.config/lf"
 }
 
 
@@ -145,50 +121,21 @@ config_lf(){
 # tmux (https://github.com/tmux/tmux)
 ###################################
 inst_tmux_root(){
-	print_info "Installing tmux ..."
-	sudo apt install -y libevent-dev ncurses-dev build-essential bison pkg-config
-	wget https://github.com/tmux/tmux/releases/download/3.3/tmux-3.3.tar.gz -O /tmp/tmux.tar.gz -nv > /dev/null
-	if $(file /tmp/tmux.tar.gz | grep gzip > /dev/null);
-	then
-		mkdir /tmp/tmuxexport
-		tar zxf /tmp/tmux.tar.gz -C /tmp/
-		cd /tmp/tmux-3.3/
-		./configure && make -j 4
-		if [ $IS_SUDOER -eq 1 ];
-		then
-			sudo make install
-		else
-			# useless
-			make install
-		fi
-		print_info "tmux installed."
-	fi
-	cd -
-	rm /tmp/tmux.tar.gz
-	rm -rf /tmp/tmux-3.3/
+	print_info "Installing tmux from Debian packages ..."
+	sudo apt install -y tmux
 }
 
-# Currently, tmux must be installed manually for non-root users.
-# inst_tmux_noroot() {}
+inst_tmux_noroot(){
+	print_warn "tmux is not installed and no sudo privileges are available"
+}
 
 # Link tmux config
 config_tmux(){
 	print_info "Processing tmux ..."
-	if [ ! -f "$HOME/.tmux.conf" ]; then
-		ln -s $CURRENT_PATH/.config/tmux/tmux.conf $HOME/.tmux.conf
-	fi
-	tmux source-file $HOME/.tmux.conf
-}
+	link_path "$CURRENT_PATH/.config/tmux/tmux.conf" "$HOME/.tmux.conf"
 
-
-###################################
-# local proxy
-###################################
-# Link proxy config
-config_proxy(){
-	print_info "Processing proxy ..."
-	if [ -d "$HOME/.local/bin" ] && [ ! -e "$HOME/.local/bin/setproxy" ]; then
-		ln -s $CURRENT_PATH/.local/bin/setproxy $HOME/.local/bin/setproxy
+	if command -v tmux > /dev/null 2>&1 && [ -n "${TMUX:-}" ]; then
+		tmux source-file "$HOME/.tmux.conf"
 	fi
 }
 
@@ -197,9 +144,14 @@ config_proxy(){
 # Config vim
 ###################################
 config_vim(){
-	print_info "Configuring vim ..."
+	print_info "Configuring Neovim ..."
+	if ! command -v git > /dev/null 2>&1; then
+		print_warn "Skipping Neovim bootstrap because git is not installed"
+		return 0
+	fi
+
 	if [ ! -d "$HOME/.config/nvim" ]; then
-		# Check the validity of ssh connection
+		# Check whether GitHub SSH auth is available before cloning.
 		ssh -T git@github.com &> /dev/null
 		local status=$?
 		if [ $status -eq 1 ]; then
@@ -208,10 +160,13 @@ config_vim(){
 			git clone https://github.com/xinyu-yang/myvim.git "$HOME/.config/nvim"
 		fi
 	fi
-	cd "$HOME/.config/nvim"
-	git pull origin
-	/bin/bash ./setup.sh
-	cd -
+	if [ -d "$HOME/.config/nvim/.git" ]; then
+		git -C "$HOME/.config/nvim" pull origin
+	fi
+
+	if [ -f "$HOME/.config/nvim/setup.sh" ]; then
+		/bin/bash "$HOME/.config/nvim/setup.sh"
+	fi
 }
 
 
@@ -220,7 +175,7 @@ config_vim(){
 ###################################
 
 # Create config directory
-[ ! -d "$HOME/.config/" ] && mkdir "$HOME/.config/"
+ensure_dir "$HOME/.config/"
 
 # Test whether this user has sudo priviledge
 if (sudo -v > /dev/null);
@@ -228,26 +183,13 @@ then
 	print_info "Installing as root"
 	IS_SUDOER=1
 	POSTFIX=root
-	if ! command -v curl > /dev/null;
-	then
-		print_info "Installing curl ..."
-		sudo apt install -y curl
-	fi
 	array=(lf tmux)
 else
 	print_info "Installing as non-root"
 	IS_SUDOER=0
 	POSTFIX=noroot
-	if ! command -v curl > /dev/null;
-	then
-		print_error "No curl command!"
-		print_error "Exiting..."
-		exit 1
-	fi
-	if [ ! -d "$HOME/.local/bin" ]; then
-		mkdir -p $HOME/.local/bin
-	fi
-	array=(lf)
+	ensure_dir "$HOME/.local/bin"
+	array=()
 fi
 
 
@@ -266,7 +208,7 @@ done
 ###################################
 # MAIN
 ###################################
-config_list=(bash fish tmux lf proxy vim)
+config_list=(bash tmux lf vim)
 
 for app in ${config_list[*]}; do
 	config_${app}

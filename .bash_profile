@@ -4,9 +4,12 @@
 
 # Default programs:
 export EDITOR="nvim"
-export TERMINAL="st"
-export BROWSER="firefox"
-export TERM="tmux-256color"
+if command -v konsole > /dev/null 2>&1; then
+	export TERMINAL="konsole"
+fi
+if command -v microsoft-edge > /dev/null 2>&1; then
+	export BROWSER="microsoft-edge"
+fi
 
 # ~/ Clean-up:
 export XDG_CONFIG_HOME="$HOME/.config"
