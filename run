@@ -3,7 +3,6 @@
 # To mark config files that have been updated
 MARKER="(: MARKER :)"
 CURRENT_PATH=$(cd -- "$(dirname -- "$0")" && pwd)
-LEGACY_PATH="$HOME/config.sh"
 
 # log functions
 print_info() { echo -e "[INFO] $1"; }
@@ -35,28 +34,6 @@ ensure_dir() {
 	fi
 }
 
-refresh_import_block() {
-	local target_file="$1"
-	local managed_name="$2"
-	local comment_line="# Import ${managed_name} from config.desktop"
-
-	if [ "$managed_name" = ".bash_profile" ]; then
-		comment_line="${comment_line} ${MARKER}"
-	fi
-
-	sed -i \
-		-e '/^CURRENT_PATH=.*# (: MARKER :)$/d' \
-		-e "/^# Import ${managed_name//./\\.} from config\\.\(sh\|desktop\)\( (: MARKER :)\)\?$/,/^fi$/d" \
-		"$target_file"
-
-	printf '\nCURRENT_PATH=%s # %s\n\n%s\nif [ -f "$CURRENT_PATH/%s" ]; then\n\t. "$CURRENT_PATH/%s"\nfi\n' \
-		"$CURRENT_PATH" \
-		"$MARKER" \
-		"$comment_line" \
-		"$managed_name" \
-		"$managed_name" >> "$target_file"
-}
-
 link_path() {
 	local source_path="$1"
 	local target_path="$2"
@@ -70,13 +47,7 @@ link_path() {
 			return 0
 		fi
 
-		if [[ "$resolved_target" == "$LEGACY_PATH"* ]]; then
-			print_info "Relinking $target_path from legacy config.sh to config.desktop"
-			ln -sfn "$source_path" "$target_path"
-			return 0
-		fi
-
-		print_warn "Skipping $target_path because it links somewhere else"
+		print_warn "$target_path is linked to $resolved_target instead of $source_path"
 		return 0
 	fi
 
@@ -99,10 +70,10 @@ config_bash(){
 		grep "$MARKER" $HOME/.bashrc > /dev/null
 		if [ $? -ne 0 ]; then
 			print_info "Adding CURRENT_PATH env"
-			refresh_import_block "$HOME/.bashrc" ".bashrc"
-		elif ! grep -Fq "CURRENT_PATH=$CURRENT_PATH # $MARKER" "$HOME/.bashrc"; then
-			print_info "Updating existing managed .bashrc import to config.desktop"
-			refresh_import_block "$HOME/.bashrc" ".bashrc"
+			echo >> "$HOME/.bashrc"
+			echo "CURRENT_PATH=$CURRENT_PATH # (: MARKER :)" >> "$HOME/.bashrc"
+			print_info "Adding $CURRENT_PATH/.bashrc ..."
+			echo "$import_bashrc" >> "$HOME/.bashrc"
 		fi
 	else
 		print_info "Linking $CURRENT_PATH/.bashrc ..."
@@ -117,10 +88,10 @@ config_bash(){
 		grep "$MARKER" $HOME/.bash_profile > /dev/null
 		if [ $? -ne 0 ]; then
 			print_info "Adding CURRENT_PATH env"
-			refresh_import_block "$HOME/.bash_profile" ".bash_profile"
-		elif ! grep -Fq "CURRENT_PATH=$CURRENT_PATH # $MARKER" "$HOME/.bash_profile"; then
-			print_info "Updating existing managed .bash_profile import to config.desktop"
-			refresh_import_block "$HOME/.bash_profile" ".bash_profile"
+			echo >> "$HOME/.bash_profile"
+			echo "CURRENT_PATH=$CURRENT_PATH # (: MARKER :)" >> "$HOME/.bash_profile"
+			print_info "Adding $CURRENT_PATH/.bash_profile ..."
+			echo "$import_bash_profile" >> "$HOME/.bash_profile"
 		fi
 	else
 		print_info "Linking $CURRENT_PATH/.bash_profile ..."
