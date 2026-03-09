@@ -63,7 +63,17 @@ handle_mime() {
             ;;
         image/*)
             if command -v chafa >/dev/null 2>&1; then
-                chafa --fill=block --symbols=block -c 256 -s 80x"${HEIGHT}" -- "$FILE_PATH"
+                chafa \
+                    --format symbols \
+                    --symbols block \
+                    --fill block \
+                    --colors full \
+                    --work 9 \
+                    --optimize 9 \
+                    --polite off \
+                    --relative off \
+                    -s 80x"${HEIGHT}" \
+                    -- "$FILE_PATH"
             elif command -v identify >/dev/null 2>&1; then
                 identify -- "$FILE_PATH"
             else
