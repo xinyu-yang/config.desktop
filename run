@@ -3,6 +3,7 @@
 # To mark config files that have been updated
 MARKER="(: MARKER :)"
 CURRENT_PATH=$(cd -- "$(dirname -- "$0")" && pwd)
+LEGACY_PATH="$HOME/config.sh"
 
 # log functions
 print_info() { echo -e "[INFO] $1"; }
@@ -34,15 +35,47 @@ ensure_dir() {
 	fi
 }
 
+refresh_import_block() {
+	local target_file="$1"
+	local managed_name="$2"
+	local comment_line="# Import ${managed_name} from config.desktop"
+
+	if [ "$managed_name" = ".bash_profile" ]; then
+		comment_line="${comment_line} ${MARKER}"
+	fi
+
+	sed -i \
+		-e '/^CURRENT_PATH=.*# (: MARKER :)$/d' \
+		-e "/^# Import ${managed_name//./\\.} from config\\.\(sh\|desktop\)\( (: MARKER :)\)\?$/,/^fi$/d" \
+		"$target_file"
+
+	printf '\nCURRENT_PATH=%s # %s\n\n%s\nif [ -f "$CURRENT_PATH/%s" ]; then\n\t. "$CURRENT_PATH/%s"\nfi\n' \
+		"$CURRENT_PATH" \
+		"$MARKER" \
+		"$comment_line" \
+		"$managed_name" \
+		"$managed_name" >> "$target_file"
+}
+
 link_path() {
 	local source_path="$1"
 	local target_path="$2"
 
 	if [ -L "$target_path" ]; then
-		if [ "$(readlink -f "$target_path")" = "$(readlink -f "$source_path")" ]; then
+		local resolved_target
+		resolved_target="$(readlink -f "$target_path")"
+
+		if [ "$resolved_target" = "$(readlink -f "$source_path")" ]; then
 			print_warn "$target_path already links to $source_path"
 			return 0
 		fi
+
+		if [[ "$resolved_target" == "$LEGACY_PATH"* ]]; then
+			print_info "Relinking $target_path from legacy config.sh to config.desktop"
+			ln -sfn "$source_path" "$target_path"
+			return 0
+		fi
+
 		print_warn "Skipping $target_path because it links somewhere else"
 		return 0
 	fi
@@ -60,35 +93,34 @@ config_bash(){
 	# Update or link .bashrc
 	print_info "Processing .bashrc ..."
 
-
-	if [ -f "$HOME/.bashrc" ]; then
+	if [ -L "$HOME/.bashrc" ]; then
+		link_path "$CURRENT_PATH/.bashrc" "$HOME/.bashrc"
+	elif [ -f "$HOME/.bashrc" ]; then
 		grep "$MARKER" $HOME/.bashrc > /dev/null
 		if [ $? -ne 0 ]; then
 			print_info "Adding CURRENT_PATH env"
-			echo >> "$HOME/.bashrc"
-			echo "CURRENT_PATH=$CURRENT_PATH # (: MARKER :)" >> "$HOME/.bashrc"
-
-			#echo >> "$HOME/.bashrc"
-			print_info "Adding $CURRENT_PATH/.bashrc ..."
-			echo "$import_bashrc" >> "$HOME/.bashrc"
+			refresh_import_block "$HOME/.bashrc" ".bashrc"
+		elif ! grep -Fq "CURRENT_PATH=$CURRENT_PATH # $MARKER" "$HOME/.bashrc"; then
+			print_info "Updating existing managed .bashrc import to config.desktop"
+			refresh_import_block "$HOME/.bashrc" ".bashrc"
 		fi
 	else
 		print_info "Linking $CURRENT_PATH/.bashrc ..."
 		link_path "$CURRENT_PATH/.bashrc" "$HOME/.bashrc"
 	fi
 
-
 	# Update or link .bash_profile
 	print_info "Processing .bash_profile ..."
-	if [ -f "$HOME/.bash_profile" ]; then
+	if [ -L "$HOME/.bash_profile" ]; then
+		link_path "$CURRENT_PATH/.bash_profile" "$HOME/.bash_profile"
+	elif [ -f "$HOME/.bash_profile" ]; then
 		grep "$MARKER" $HOME/.bash_profile > /dev/null
 		if [ $? -ne 0 ]; then
 			print_info "Adding CURRENT_PATH env"
-			echo >> "$HOME/.bash_profile"
-			echo "CURRENT_PATH=$CURRENT_PATH # (: MARKER :)" >> "$HOME/.bash_profile"
-
-			print_info "Adding $CURRENT_PATH/.bash_profile ..."
-			echo "$import_bash_profile" >> "$HOME/.bash_profile"
+			refresh_import_block "$HOME/.bash_profile" ".bash_profile"
+		elif ! grep -Fq "CURRENT_PATH=$CURRENT_PATH # $MARKER" "$HOME/.bash_profile"; then
+			print_info "Updating existing managed .bash_profile import to config.desktop"
+			refresh_import_block "$HOME/.bash_profile" ".bash_profile"
 		fi
 	else
 		print_info "Linking $CURRENT_PATH/.bash_profile ..."
@@ -145,6 +177,8 @@ config_tmux(){
 ###################################
 config_vim(){
 	print_info "Configuring Neovim ..."
+	local cloned=0
+
 	if ! command -v git > /dev/null 2>&1; then
 		print_warn "Skipping Neovim bootstrap because git is not installed"
 		return 0
@@ -159,13 +193,13 @@ config_vim(){
 		else
 			git clone https://github.com/xinyu-yang/myvim.git "$HOME/.config/nvim"
 		fi
-	fi
-	if [ -d "$HOME/.config/nvim/.git" ]; then
-		git -C "$HOME/.config/nvim" pull origin
+		cloned=1
 	fi
 
-	if [ -f "$HOME/.config/nvim/setup.sh" ]; then
+	if [ "$cloned" -eq 1 ] && [ -f "$HOME/.config/nvim/setup.sh" ]; then
 		/bin/bash "$HOME/.config/nvim/setup.sh"
+	elif [ -d "$HOME/.config/nvim" ]; then
+		print_warn "Neovim config already exists; skipping update and setup"
 	fi
 }
 
