@@ -1,61 +1,101 @@
 #!/bin/bash
 
 set -C -f -u
-#IFS=$'\n'
-IFS="$(printf '%b_' '\n')"; IFS="${IFS%_}"
+IFS="$(printf '%b_' '\n')"
+IFS="${IFS%_}"
 
-# ANSI color codes are supported.
-# STDIN is disabled, so interactive scripts won't work properly
-
-# This script is considered a configuration file and must be updated manually.
-
-# Meanings of exit codes:
-# code | meaning    | action of ranger
-# -----+------------+-------------------------------------------
-# 0    | success    | Display stdout as preview
-# 1    | no preview | Display no preview at all
-# 2    | plain text | Display the plain content of the file
-
-# Script arguments
-FILE_PATH="${1}"         # Full path of the highlighted file
-HEIGHT="${2}"
-
-#FILE_EXTENSION="${FILE_PATH##*.}"
-#FILE_EXTENSION_LOWER=$(echo ${FILE_EXTENSION} | tr '[:upper:]' '[:lower:]')
-
-# Settings
-HIGHLIGHT_SIZE_MAX=262143  # 256KiB
+FILE_PATH="${1}"
+HEIGHT="${2:-40}"
+HIGHLIGHT_SIZE_MAX=262143
 HIGHLIGHT_TABWIDTH=8
 HIGHLIGHT_STYLE='pablo'
 
+preview_text() {
+    if [ "$(stat --printf='%s' -- "$FILE_PATH")" -gt "$HIGHLIGHT_SIZE_MAX" ]; then
+        head -c 5000 -- "$FILE_PATH"
+        return 0
+    fi
+
+    if command -v highlight >/dev/null 2>&1; then
+        if [ "$(tput colors)" -ge 256 ]; then
+            local format='xterm256'
+        else
+            local format='ansi'
+        fi
+
+        highlight \
+            --replace-tabs="${HIGHLIGHT_TABWIDTH}" \
+            --out-format="${format}" \
+            --style="${HIGHLIGHT_STYLE}" \
+            --force \
+            -- "$FILE_PATH"
+        return 0
+    fi
+
+    sed -n '1,200p' -- "$FILE_PATH"
+}
 
 handle_mime() {
     local mimetype="${1}"
+
     case "${mimetype}" in
-        text/html) w3m -dump "${FILE_PATH}" ;;
-        text/troff) man ./ "${FILE_PATH}" | col -b ;;
-        text/* | */xml)
-            if [ "$( stat --printf='%s' -- "${FILE_PATH}" )" -gt "${HIGHLIGHT_SIZE_MAX}" ]; then
-				head -c 5000 ${FILE_PATH}
-            fi
-            if [ "$( tput colors )" -ge 256 ]; then
-                local highlight_format='xterm256'
+        text/html)
+            if command -v w3m >/dev/null 2>&1; then
+                w3m -dump -- "$FILE_PATH"
             else
-                local highlight_format='ansi'
+                sed -n '1,200p' -- "$FILE_PATH"
             fi
-            highlight --replace-tabs="${HIGHLIGHT_TABWIDTH}" --out-format="${highlight_format}" \
-                --style="${HIGHLIGHT_STYLE}" --force -- "${FILE_PATH}" ;;
-        #application/zip | application/x-tar | application/gzip ) atool --list -- "${FILE_PATH}" ;;
-        application/zip ) unzip -l "${FILE_PATH}" | head -n 200;;
-        application/gzip | application/x-tar ) tar --list -f "${FILE_PATH}" | head -n 200 ;;
-        image/*) chafa --fill=block --symbols=block -c 256 -s 80x"${HEIGHT}" "${FILE_PATH}" || exit 1;;
-        video/* | audio/*|application/octet-stream) mediainfo "${FILE_PATH}" || exit 1;;
-        */pdf) pdftotext -l 10 -nopgbrk -q -- "${FILE_PATH}" - ;;
-        *opendocument*) odt2txt "${FILE_PATH}" ;;
-        *) head -n 100 "${FILE_PATH}" ;;
+            ;;
+        text/troff)
+            man ./ "$FILE_PATH" | col -b
+            ;;
+        text/*|*/xml|application/json)
+            preview_text
+            ;;
+        application/zip)
+            unzip -l -- "$FILE_PATH" | head -n 200
+            ;;
+        application/gzip)
+            gzip -l -- "$FILE_PATH" 2>/dev/null || file --brief -- "$FILE_PATH"
+            ;;
+        application/x-tar|application/x-xz|application/x-bzip2)
+            tar --list -f "$FILE_PATH" | head -n 200
+            ;;
+        image/*)
+            if command -v chafa >/dev/null 2>&1; then
+                chafa --fill=block --symbols=block -c 256 -s 80x"${HEIGHT}" -- "$FILE_PATH"
+            elif command -v identify >/dev/null 2>&1; then
+                identify -- "$FILE_PATH"
+            else
+                file --brief -- "$FILE_PATH"
+            fi
+            ;;
+        video/*|audio/*)
+            if command -v mediainfo >/dev/null 2>&1; then
+                mediainfo -- "$FILE_PATH"
+            else
+                file --brief -- "$FILE_PATH"
+            fi
+            ;;
+        application/pdf)
+            if command -v pdftotext >/dev/null 2>&1; then
+                pdftotext -l 10 -nopgbrk -q -- "$FILE_PATH" - || file --brief -- "$FILE_PATH"
+            else
+                file --brief -- "$FILE_PATH"
+            fi
+            ;;
+        *opendocument*)
+            if command -v odt2txt >/dev/null 2>&1; then
+                odt2txt -- "$FILE_PATH"
+            else
+                file --brief -- "$FILE_PATH"
+            fi
+            ;;
+        *)
+            file --brief -- "$FILE_PATH"
+            ;;
     esac
 }
 
-MIMETYPE="$( file --dereference --brief --mime-type -- "${FILE_PATH}" )"
-handle_mime "${MIMETYPE}"
-exit 1
+MIMETYPE="$(file --dereference --brief --mime-type -- "$FILE_PATH")"
+handle_mime "$MIMETYPE"

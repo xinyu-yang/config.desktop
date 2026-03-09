@@ -1,6 +1,5 @@
-# Luke's lf settings
+# lf configuration for Debian KDE desktop
 
-# Basic vars
 set shell bash
 set shellopts '-eu'
 set ifs "\n"
@@ -9,64 +8,95 @@ set icons
 set period 1
 set hiddenfiles ".*:*.aux:*.log:*.bbl:*.bcf:*.blg:*.run.xml"
 
-# Vars that depend on environmental variables
-$lf -remote "send $id set previewer ${XDG_CONFIG_HOME:-$HOME/.config}/lf/scope"
+set previewer ~/.config/lf/scope
 
-# cmds/functions
 cmd open ${{
-    case $(file --mime-type $f -b) in
-	image/vnd.djvu|application/pdf|application/octet-stream) setsid -f zathura $fx >/dev/null 2>&1 ;;
-    text/html) w3m $f ;;
-    text/*) $EDITOR $fx;;
-	image/x-xcf) setsid -f gimp $f >/dev/null 2>&1 ;;
-	image/svg+xml) display -- $f ;;
-	image/*) rotdir $f | grep -i "\.\(png\|jpg\|jpeg\|gif\|webp\|tif\|ico\)\(_large\)*$" | sxiv -aio 2>/dev/null | lf-select ;;
-	audio/*) mpv --audio-display=no $f ;;
-	video/*) setsid -f mpv $f -quiet >/dev/null 2>&1 ;;
-    application/pdf|application/vnd*|application/epub*) setsid -f zathura $fx >/dev/null 2>&1 ;;
-         *) for f in $fx; do setsid -f $OPENER $f >/dev/null 2>&1; done;;
+    mime="$(file --dereference --brief --mime-type -- "$f")"
+
+    case "$mime" in
+        text/*|*/xml|application/json)
+            "${EDITOR:-nvim}" $fx
+            ;;
+        text/html|application/xhtml+xml)
+            if command -v microsoft-edge >/dev/null 2>&1; then
+                setsid -f microsoft-edge "$f" >/dev/null 2>&1
+            else
+                setsid -f xdg-open "$f" >/dev/null 2>&1
+            fi
+            ;;
+        application/pdf|application/epub+zip|image/vnd.djvu)
+            if command -v okular >/dev/null 2>&1; then
+                setsid -f okular "$f" >/dev/null 2>&1
+            else
+                setsid -f xdg-open "$f" >/dev/null 2>&1
+            fi
+            ;;
+        image/*)
+            if command -v gwenview >/dev/null 2>&1; then
+                setsid -f gwenview "$f" >/dev/null 2>&1
+            else
+                setsid -f xdg-open "$f" >/dev/null 2>&1
+            fi
+            ;;
+        audio/*|video/*)
+            if command -v dragon >/dev/null 2>&1; then
+                setsid -f dragon "$f" >/dev/null 2>&1
+            else
+                setsid -f xdg-open "$f" >/dev/null 2>&1
+            fi
+            ;;
+        *)
+            for item in $fx; do
+                setsid -f "${OPENER:-xdg-open}" "$item" >/dev/null 2>&1
+            done
+            ;;
     esac
 }}
 
 cmd mkdir $mkdir -p "$(echo $* | tr ' ' '\ ')"
 
 cmd delete ${{
-	clear; tput cup $(($(tput lines)/3)); tput bold
-	set -f
-	printf "%s\n\t" "$fx"
-	printf "delete?[y/N]"
-	read ans
-	[ $ans = "y" ] && rm -rf -- $fx
+    clear
+    tput cup $(($(tput lines) / 3))
+    tput bold
+    set -f
+    printf "%s\n\t" "$fx"
+    printf "delete?[y/N]"
+    read -r ans
+    [ "$ans" = "y" ] && rm -rf -- $fx
 }}
 
 cmd moveto ${{
-	clear; tput cup $(($(tput lines)/3)); tput bold
-	set -f
-	clear; echo "Move to where?"
-	dest="$(cut -d'	' -f2- ${XDG_CONFIG_HOME:-$HOME/.config}/shell/bm-dirs | fzf | sed 's|~|$HOME|' )" &&
-	for x in $fx; do
-		eval mv -iv \"$x\" \"$dest\"
-	done &&
-	notify-send "🚚 File(s) moved." "File(s) moved to $dest."
+    clear
+    printf "Move to: "
+    read -r dest
+    [ -n "$dest" ] || exit 0
+    mkdir -p -- "$dest"
+    for item in $fx; do
+        mv -iv -- "$item" "$dest/"
+    done
 }}
 
 cmd copyto ${{
-	clear; tput cup $(($(tput lines)/3)); tput bold
-	set -f
-	clear; echo "Copy to where?"
-	dest="$(cut -d'	' -f2- ${XDG_CONFIG_HOME:-$HOME/.config}/shell/bm-dirs | fzf | sed 's|~|$HOME|' )" &&
-	for x in $fx; do
-		eval cp -ivr \"$x\" \"$dest\"
-	done &&
-	notify-send "📋 File(s) copied." "File(s) copies to $dest."
+    clear
+    printf "Copy to: "
+    read -r dest
+    [ -n "$dest" ] || exit 0
+    mkdir -p -- "$dest"
+    for item in $fx; do
+        cp -ivr -- "$item" "$dest/"
+    done
 }}
 
-cmd setbg "$1"
-cmd bulkrename $vidir
+cmd bulkrename ${{
+    if command -v vidir >/dev/null 2>&1; then
+        vidir
+    else
+        echo "vidir is not installed"
+        exit 1
+    fi
+}}
 
-# Bindings
-#map <c-f> $lf -remote "send $id select '$(fzf)'"
-map J $lf -remote "send $id cd $(cut -d'	' -f2 ${XDG_CONFIG_HOME:-$HOME/.config}/shell/bm-dirs | fzf)"
 map gh
 map g top
 map D delete
@@ -74,19 +104,17 @@ map C copyto
 map M moveto
 map <c-n> push :mkdir<space>
 map <c-r> reload
-map <enter> shell
+map <enter> open
 map x $$f
 map X !$f
-map o &mimeopen $f
-map O $mimeopen --ask $f
+map o open
+map O &mimeopen --ask $f
 
-map A rename # at the very end
-map c push A<c-u> # new rename
-map I push A<c-a> # at the very beginning
-#map i push A<a-b><a-b><a-f> # before extention
-map a push A<a-b> # after extention
+map A rename
+map c push A<c-u>
+map I push A<c-a>
+map a push A<a-b>
 map B bulkrename
-map b $setbg $f
 
 map <c-e> down
 map <c-y> up
