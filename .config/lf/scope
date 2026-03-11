@@ -70,7 +70,7 @@ handle_mime() {
                     --colors full \
                     --work 9 \
                     --optimize 9 \
-                    --polite off \
+                    --polite on \
                     --relative off \
                     -s 80x"${HEIGHT}" \
                     -- "$FILE_PATH"
